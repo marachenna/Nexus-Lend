@@ -222,3 +222,83 @@
   )
 )
 
+(define-public (repay-vault (vault-id uint))
+  (let 
+    (
+      (ownership-valid (asserts! 
+        (verify-ownership vault-id) 
+        ERR-NOT-PERMITTED
+      ))
+      
+      (vault (unwrap! 
+        (map-get? vaults {vault-id: vault-id, owner: tx-sender}) 
+        ERR-VAULT-NOT-FOUND
+      ))
+      (payment-record (default-to 
+        {total-paid: u0} 
+        (map-get? payments {vault-id: vault-id, owner: tx-sender})
+      ))
+    )
+    ;; Check status
+    (asserts! (get status vault) ERR-NOT-PERMITTED)
+    
+    ;; Calculate total owed
+    (let 
+      (
+        (total-due (+ 
+          (get debt vault)
+          (/ (* (get debt vault) (get apr vault)) u100)
+        ))
+      )
+      ;; Verify amount
+      (asserts! (<= total-due MAX-VALUE) ERR-REPAYMENT-FAILED)
+      
+      ;; Close vault
+      (map-set vaults 
+        {vault-id: vault-id, owner: tx-sender}
+        (merge vault {status: false})
+      )
+      
+      ;; Record payment
+      (map-set payments
+        {vault-id: vault-id, owner: tx-sender}
+        {total-paid: total-due}
+      )
+      
+      (ok total-due)
+    )
+  )
+)
+
+(define-public (liquidate-vault (vault-id uint))
+  (let 
+    (
+      (ownership-valid (asserts! 
+        (verify-ownership vault-id) 
+        ERR-NOT-PERMITTED
+      ))
+      
+      (vault (unwrap! 
+        (map-get? vaults {vault-id: vault-id, owner: tx-sender}) 
+        ERR-VAULT-NOT-FOUND
+      ))
+    )
+    ;; Check status
+    (asserts! (get status vault) ERR-NOT-PERMITTED)
+    
+    ;; Verify term expiration
+    (asserts! 
+      (> (- block-height (get creation-height vault)) 
+         (get term-length vault)) 
+      ERR-VAULT-HEALTHY
+    )
+    
+    ;; Mark for liquidation
+    (map-set vaults 
+      {vault-id: vault-id, owner: tx-sender}
+      (merge vault {status: false})
+    )
+    
+    (ok true)
+  )
+)
