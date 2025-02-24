@@ -181,3 +181,44 @@
     )
   )
 )
+
+(define-public (withdraw-collateral (vault-id uint) (amount uint))
+  (let
+    (
+      (ownership-valid (asserts! 
+        (verify-ownership vault-id) 
+        ERR-NOT-PERMITTED
+      ))
+      
+      (vault (unwrap! 
+        (map-get? vaults {vault-id: vault-id, owner: tx-sender}) 
+        ERR-VAULT-NOT-FOUND
+      ))
+    )
+    ;; Verify active status
+    (asserts! (get status vault) ERR-NOT-PERMITTED)
+    
+    ;; Check amount
+    (asserts! (> amount u0) ERR-INVALID-INPUT)
+    (asserts! (<= amount (get collateral vault)) ERR-NOT-ENOUGH-FUNDS)
+    
+    ;; Calculate remaining collateral
+    (let
+      (
+        (remaining-collateral (- (get collateral vault) amount))
+        (required-collateral (calculate-min-collateral (get debt vault)))
+      )
+      ;; Verify safety
+      (asserts! (>= remaining-collateral required-collateral) ERR-UNSAFE-RATIO)
+      
+      ;; Update vault
+      (map-set vaults 
+        {vault-id: vault-id, owner: tx-sender}
+        (merge vault {collateral: remaining-collateral})
+      )
+      
+      (ok amount)
+    )
+  )
+)
+
